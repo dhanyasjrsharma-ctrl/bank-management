@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Dhanya",
+    "age": 19,
+    "mail": "dhanya@gmail.com",
+    "balance": 5000,
+    "account no.": "GHOZ66298610",
+    "pin": 2345,
+    "number": 1234567890
+  },
+  {
+    "name": "Dhanya sharma",
+    "age": 19,
+    "mail": "dhanya@gmail.com",
+    "Balance": 0,
+    "accountno.": "ZOII32789385",
+    "number": 1234567890,
+    "pin": 1234
+  },
+  {
+    "name": "Dhanya Sharma",
+    "age": 19,
+    "mail": "dhanya@gmail.com",
+    "Balance": 0,
+    "accountno.": "WEVS47853272",
+    "number": 1234567890,
+    "pin": 1234
+  }
+]
