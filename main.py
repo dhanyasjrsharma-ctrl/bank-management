@@ -184,7 +184,7 @@ print("press 3 for withdrawal")
 print("print 4 for checking balance")
 print("press 5 for updating some details")
 print("press 6 for deactivating your account")
-print("press 0 for exit")
+print("press   0 for exit")
 
 
 check=int(input("tell your response :-"))
