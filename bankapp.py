@@ -1,523 +1,335 @@
-#Aapka streamlit ka code.
-"""
-💖 Glow Bank — an interactive Streamlit banking app
-Rebuilt from a console-based Bank class into a slick, animated web UI.
-"""
-
+import streamlit as st
+from pathlib import Path
 import json
 import random
 import string
-import time
-from pathlib import Path
 
-import streamlit as st
+# ----------------------------------------------------------------------------
+# Config
+# ----------------------------------------------------------------------------
 
-# ------------------------------------------------------------------
-# CONFIG
-# ------------------------------------------------------------------
-DB_PATH = Path(__file__).parent / "database.json"
+DATABASE = "database.json"
 
-st.set_page_config(
-    page_title="Glow Bank",
-    page_icon="💖",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# Canonical schema keys — every account record is guaranteed to have these
+# after passing through _normalize(). This is what prevents KeyErrors when
+# older/malformed records exist in database.json.
+REQUIRED_KEYS = {
+    "name": "",
+    "age": 0,
+    "mail": "",
+    "balance": 0,
+    "accountno.": "",
+    "pin": 0,
+    "number": 0,
+}
 
-# ------------------------------------------------------------------
-# STYLE
-# ------------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700;800&display=swap');
 
-    html, body, [class*="css"]  {
-        font-family: 'Poppins', sans-serif;
-    }
+def _normalize(record: dict) -> dict:
+    """Fill in any missing keys on a record so downstream code never KeyErrors."""
+    fixed = dict(REQUIRED_KEYS)
+    fixed.update(record)
+    return fixed
 
-    .stApp {
-        background: linear-gradient(135deg, #1f1147 0%, #4b1668 40%, #8f2d78 75%, #ff6b9d 100%);
-        background-size: 300% 300%;
-        animation: gradientShift 18s ease infinite;
-    }
 
-    @keyframes gradientShift {
-        0% {background-position: 0% 50%;}
-        50% {background-position: 100% 50%;}
-        100% {background-position: 0% 50%;}
-    }
-
-    section[data-testid="stSidebar"] {
-        background: rgba(15, 8, 36, 0.85);
-        backdrop-filter: blur(10px);
-        border-right: 1px solid rgba(255,255,255,0.08);
-    }
-
-    .glow-title {
-        font-size: 3rem;
-        font-weight: 800;
-        text-align: center;
-        background: linear-gradient(90deg, #ffd1ff, #fad0c4, #a18cd1, #ffd1ff);
-        background-size: 300% 300%;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        animation: shine 6s linear infinite;
-        margin-bottom: 0;
-        text-shadow: 0 0 30px rgba(255,255,255,0.15);
-    }
-
-    @keyframes shine {
-        0% {background-position: 0% 50%;}
-        100% {background-position: 300% 50%;}
-    }
-
-    .subtitle {
-        text-align: center;
-        color: #eadcff;
-        opacity: 0.85;
-        font-weight: 300;
-        margin-top: -8px;
-        margin-bottom: 1.6rem;
-        letter-spacing: 1px;
-    }
-
-    .glass-card {
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        border-radius: 20px;
-        padding: 1.6rem 1.8rem;
-        box-shadow: 0 8px 32px rgba(31, 4, 61, 0.37);
-        backdrop-filter: blur(8px);
-        margin-bottom: 1.2rem;
-        transition: transform 0.25s ease, box-shadow 0.25s ease;
-    }
-    .glass-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 14px 40px rgba(255, 107, 157, 0.35);
-    }
-
-    .avatar {
-        width: 78px;
-        height: 78px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: white;
-        background: linear-gradient(135deg, #ff6b9d, #a18cd1);
-        margin: 0 auto 10px auto;
-        box-shadow: 0 0 25px rgba(255, 107, 157, 0.55);
-        animation: pulse 2.5s ease-in-out infinite;
-    }
-    @keyframes pulse {
-        0% { box-shadow: 0 0 15px rgba(255, 107, 157, 0.4); }
-        50% { box-shadow: 0 0 30px rgba(255, 107, 157, 0.8); }
-        100% { box-shadow: 0 0 15px rgba(255, 107, 157, 0.4); }
-    }
-
-    div.stButton > button {
-        background: linear-gradient(90deg, #ff6b9d, #a18cd1);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 0.6rem 1.4rem;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        transition: all 0.25s ease;
-        box-shadow: 0 4px 14px rgba(255, 107, 157, 0.35);
-    }
-    div.stButton > button:hover {
-        transform: scale(1.04);
-        box-shadow: 0 8px 22px rgba(255, 107, 157, 0.55);
-        color: white;
-    }
-
-    .metric-box {
-        text-align: center;
-        color: white;
-    }
-
-    .badge {
-        display: inline-block;
-        padding: 3px 12px;
-        border-radius: 999px;
-        background: rgba(255,255,255,0.15);
-        font-size: 0.75rem;
-        color: #fff;
-        margin-left: 8px;
-    }
-
-    hr {
-        border-color: rgba(255,255,255,0.15);
-    }
-
-    ::placeholder { color: rgba(255,255,255,0.5) !important; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ------------------------------------------------------------------
-# DATA LAYER  (same logic as the original Bank class, made UI-safe)
-# ------------------------------------------------------------------
 def load_data():
-    if DB_PATH.exists():
+    if Path(DATABASE).exists():
         try:
-            with open(DB_PATH) as fs:
-                return json.loads(fs.read())
-        except Exception:
+            with open(DATABASE) as fs:
+                raw = json.loads(fs.read())
+        except Exception as err:
+            st.error(f"Could not read database.json: {err}")
             return []
+        # Normalize every record on load so old/malformed entries can't crash the app
+        return [_normalize(r) for r in raw]
     return []
 
 
 def save_data(data):
-    with open(DB_PATH, "w") as fs:
+    with open(DATABASE, "w") as fs:
         fs.write(json.dumps(data, indent=2))
-
-
-def generate_account_no():
-    letters = "".join(random.choices(string.ascii_uppercase, k=4))
-    digits = "".join(random.choices(string.digits, k=8))
-    return letters + digits
-
-
-def find_user(data, acc_no, pin):
-    matches = [u for u in data if u["accountno."] == acc_no and u["pin"] == pin]
-    return matches[0] if matches else None
 
 
 if "data" not in st.session_state:
     st.session_state.data = load_data()
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = None  # holds the account dict once logged in
+
+if "logged_in_acc" not in st.session_state:
+    st.session_state.logged_in_acc = None  # holds the account number once logged in
 
 
-def refresh():
-    st.session_state.data = load_data()
+# ----------------------------------------------------------------------------
+# Bank logic
+# ----------------------------------------------------------------------------
+
+def generate_acc_no():
+    chars = random.choices(string.ascii_uppercase, k=4)
+    digits = random.choices(string.digits, k=8)
+    return "".join(chars + digits)
 
 
-def initials(name):
-    parts = [p for p in name.strip().split() if p]
-    if not parts:
-        return "🙂"
-    if len(parts) == 1:
-        return parts[0][0].upper()
-    return (parts[0][0] + parts[-1][0]).upper()
+def find_user(data, acc_no, pin):
+    """Safe lookup — uses .get() so a record missing a key is just skipped,
+    never raises a KeyError."""
+    matches = [
+        u for u in data
+        if u.get("accountno.") == acc_no and u.get("pin") == pin
+    ]
+    return matches[0] if matches else None
 
 
-# ------------------------------------------------------------------
-# HEADER
-# ------------------------------------------------------------------
-st.markdown('<div class="glow-title">💖 Glow Bank</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="subtitle">banking, but make it sparkle ✨</div>',
-    unsafe_allow_html=True,
-)
+def get_current_user():
+    if not st.session_state.logged_in_acc:
+        return None
+    matches = [
+        u for u in st.session_state.data
+        if u.get("accountno.") == st.session_state.logged_in_acc
+    ]
+    return matches[0] if matches else None
 
-# ------------------------------------------------------------------
-# SIDEBAR NAV
-# ------------------------------------------------------------------
+
+def create_account(name, age, mail, pin, number):
+    if len(str(pin)) != 4:
+        return False, "Your PIN must be exactly 4 digits."
+    if len(str(number)) != 10:
+        return False, "Your phone number must be exactly 10 digits."
+    if age < 18:
+        return False, "You must be 18 or older to open an account."
+
+    info = _normalize({
+        "name": name,
+        "age": age,
+        "mail": mail,
+        "balance": 0,
+        "accountno.": generate_acc_no(),
+        "pin": pin,
+        "number": number,
+    })
+    st.session_state.data.append(info)
+    save_data(st.session_state.data)
+    return True, info
+
+
+def deposit_money(acc_no, pin, amount):
+    user = find_user(st.session_state.data, acc_no, pin)
+    if not user:
+        return False, "Invalid account number or PIN."
+    if amount > 100000 or amount <= 0:
+        return False, "You cannot deposit more than ₹100,000 or an amount ≤ 0."
+    user["balance"] += amount
+    save_data(st.session_state.data)
+    return True, user["balance"]
+
+
+def withdraw_money(acc_no, pin, amount):
+    user = find_user(st.session_state.data, acc_no, pin)
+    if not user:
+        return False, "Invalid account number or PIN."
+    if amount <= 0:
+        return False, "Enter an amount greater than 0."
+    if amount >= user["balance"]:
+        return False, "You don't have sufficient balance."
+    user["balance"] -= amount
+    save_data(st.session_state.data)
+    return True, user["balance"]
+
+
+def update_details(acc_no, pin, new_name, new_mail, new_number, new_pin):
+    user = find_user(st.session_state.data, acc_no, pin)
+    if not user:
+        return False, "Invalid account number or PIN."
+
+    if new_name.strip():
+        user["name"] = new_name.strip()
+    if new_mail.strip():
+        user["mail"] = new_mail.strip()
+    if new_number.strip():
+        if len(new_number.strip()) != 10 or not new_number.strip().isdigit():
+            return False, "Phone number must be exactly 10 digits."
+        user["number"] = int(new_number.strip())
+    if new_pin.strip():
+        if len(new_pin.strip()) != 4 or not new_pin.strip().isdigit():
+            return False, "PIN must be exactly 4 digits."
+        user["pin"] = int(new_pin.strip())
+
+    save_data(st.session_state.data)
+    return True, user
+
+
+def close_account(acc_no, pin):
+    user = find_user(st.session_state.data, acc_no, pin)
+    if not user:
+        return False, "Invalid account number or PIN."
+    st.session_state.data.remove(user)
+    save_data(st.session_state.data)
+    st.session_state.logged_in_acc = None
+    return True, "Account closed successfully."
+
+
+# ----------------------------------------------------------------------------
+# UI
+# ----------------------------------------------------------------------------
+
+st.set_page_config(page_title="Bank Management", page_icon="🏦", layout="centered")
+
 with st.sidebar:
-    st.markdown("### 🌸 Menu")
-    page = st.radio(
-        "Navigate",
-        [
-            "🏠 Home",
-            "✨ Create Account",
-            "🔐 Login",
-            "💸 Deposit",
-            "🏧 Withdraw",
-            "🪪 My Details",
-            "✏️ Update Details",
-            "🗑️ Close Account",
-        ],
-        label_visibility="collapsed",
-    )
-
-    st.markdown("---")
-    if st.session_state.logged_in:
-        u = st.session_state.logged_in
-        st.markdown(f'<div class="avatar">{initials(u["name"])}</div>', unsafe_allow_html=True)
-        st.markdown(f"<p style='text-align:center;color:white;'>Hi, <b>{u['name'].split()[0]}</b> 👋</p>", unsafe_allow_html=True)
-        st.markdown(
-            f"<p style='text-align:center;color:#eadcff;font-size:0.85rem;'>Acc: {u['accountno.']}</p>",
-            unsafe_allow_html=True,
-        )
-        if st.button("Logout 🚪", use_container_width=True):
-            st.session_state.logged_in = None
+    st.markdown("## 🏦 Menu")
+    if st.session_state.logged_in_acc:
+        pages = ["Home", "Deposit", "Withdraw", "My Details", "Update Details", "Close Account"]
+        st.success(f"Logged in: {st.session_state.logged_in_acc}")
+        if st.button("Logout"):
+            st.session_state.logged_in_acc = None
             st.rerun()
     else:
-        st.info("Not logged in yet — head to 🔐 Login")
+        pages = ["Home", "Create Account", "Login"]
+        st.info("Not logged in yet — head to 🔒 Login")
 
-# ------------------------------------------------------------------
-# HOME
-# ------------------------------------------------------------------
-if page == "🏠 Home":
-    refresh()
-    data = st.session_state.data
-    total_accounts = len(data)
-    total_balance = sum(u.get("Balance", 0) for u in data)
+    page = st.radio("Navigate", pages, label_visibility="collapsed")
 
-    c1, c2, c3 = st.columns(3)
-    for col, label, value, emoji in [
-        (c1, "Total Accounts", total_accounts, "🧑‍🤝‍🧑"),
-        (c2, "Total Balance", f"₹{total_balance:,}", "💰"),
-        (c3, "Avg Balance", f"₹{(total_balance // total_accounts) if total_accounts else 0:,}", "📊"),
-    ]:
-        with col:
-            st.markdown(
-                f"""<div class="glass-card metric-box">
-                        <div style="font-size:2rem;">{emoji}</div>
-                        <div style="font-size:1.7rem;font-weight:700;">{value}</div>
-                        <div style="opacity:0.8;">{label}</div>
-                    </div>""",
-                unsafe_allow_html=True,
-            )
+# ---------------- Home ----------------
+if page == "Home":
+    st.title("🏦 Welcome to Bank Management")
+    st.write("Use the menu on the left to create an account, log in, and manage your money.")
+    st.metric("Total accounts", len(st.session_state.data))
 
-    st.markdown(
-        """
-        <div class="glass-card">
-        <h4>Welcome to Glow Bank 🌟</h4>
-        <p style="color:#eadcff;">
-        A tiny, glowy corner of the internet where you can open an account,
-        stash some virtual cash, and feel like a finance main character.
-        Use the sidebar to get started — create an account, log in, and
-        try depositing or withdrawing money. Everything is saved locally
-        so your account will still be here next time. 💫
-        </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# ------------------------------------------------------------------
-# CREATE ACCOUNT
-# ------------------------------------------------------------------
-elif page == "✨ Create Account":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("✨ Open a new account")
-
-    with st.form("create_account_form", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            name = st.text_input("Full name")
-            age = st.number_input("Age", min_value=0, max_value=120, step=1)
-            mail = st.text_input("Email")
-        with col2:
-            number = st.text_input("10-digit phone number")
-            pin = st.text_input("Choose a 4-digit PIN", type="password", max_chars=4)
-            confirm_pin = st.text_input("Confirm PIN", type="password", max_chars=4)
-
-        submitted = st.form_submit_button("Create Account 💖", use_container_width=True)
+# ---------------- Create Account ----------------
+elif page == "Create Account":
+    st.title("✨ Create Account")
+    with st.form("create_account_form"):
+        name = st.text_input("Full name")
+        age = st.number_input("Age", min_value=0, max_value=120, step=1)
+        mail = st.text_input("Email")
+        pin = st.text_input("Choose a 4-digit PIN", type="password", max_chars=4)
+        number = st.text_input("10-digit phone number", max_chars=10)
+        submitted = st.form_submit_button("Create Account")
 
     if submitted:
         errors = []
         if not name.strip():
-            errors.append("Please enter your name.")
-        if age < 18:
-            errors.append("You must be 18 or older to open an account.")
-        if not mail.strip() or "@" not in mail:
-            errors.append("Please enter a valid email.")
-        if not (number.isdigit() and len(number) == 10):
-            errors.append("Phone number must be exactly 10 digits.")
-        if not (pin.isdigit() and len(pin) == 4):
-            errors.append("PIN must be exactly 4 digits.")
-        if pin != confirm_pin:
-            errors.append("PIN and confirmation do not match.")
+            errors.append("Name is required.")
+        if not mail.strip():
+            errors.append("Email is required.")
+        if not pin.isdigit():
+            errors.append("PIN must contain only digits.")
+        if not number.isdigit():
+            errors.append("Phone number must contain only digits.")
 
         if errors:
             for e in errors:
                 st.error(e)
         else:
-            refresh()
-            new_acc = generate_account_no()
-            info = {
-                "name": name.strip(),
-                "age": int(age),
-                "mail": mail.strip(),
-                "Balance": 0,
-                "accountno.": new_acc,
-                "number": int(number),
-                "pin": int(pin),
-            }
-            st.session_state.data.append(info)
-            save_data(st.session_state.data)
-            st.success(f"Account created! Your account number is **{new_acc}** — save it somewhere safe 💌")
-            st.balloons()
+            ok, result = create_account(name.strip(), int(age), mail.strip(), int(pin), int(number))
+            if ok:
+                st.success("🎉 Account created successfully! Save your account number below.")
+                st.balloons()
+                st.code(result["accountno."], language=None)
+            else:
+                st.error(result)
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# LOGIN
-# ------------------------------------------------------------------
-elif page == "🔐 Login":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("🔐 Log in to your account")
-
+# ---------------- Login ----------------
+elif page == "Login":
+    st.title("🔒 Log in to your account")
     with st.form("login_form"):
         acc_no = st.text_input("Account number")
         pin = st.text_input("4-digit PIN", type="password", max_chars=4)
-        submitted = st.form_submit_button("Login ✨", use_container_width=True)
+        submitted = st.form_submit_button("Login ✨")
 
     if submitted:
-        refresh()
-        try:
-            user = find_user(st.session_state.data, acc_no.strip(), int(pin))
-        except ValueError:
-            user = None
-        if user:
-            st.session_state.logged_in = user
-            with st.spinner("Unlocking your glowy dashboard..."):
-                time.sleep(0.6)
-            st.success(f"Welcome back, {user['name'].split()[0]}! 💖")
-            st.rerun()
+        if not pin.isdigit():
+            st.error("PIN must contain only digits.")
         else:
-            st.error("Invalid account number or PIN.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# DEPOSIT
-# ------------------------------------------------------------------
-elif page == "💸 Deposit":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("💸 Deposit money")
-
-    if not st.session_state.logged_in:
-        st.warning("Please log in first from the 🔐 Login page.")
-    else:
-        refresh()
-        user = find_user(st.session_state.data, st.session_state.logged_in["accountno."], st.session_state.logged_in["pin"])
-        st.metric("Current Balance", f"₹{user['Balance']:,}")
-
-        amount = st.number_input("Amount to deposit (₹)", min_value=1, max_value=100000, step=100)
-        if st.button("Deposit 💰", use_container_width=True):
-            user["Balance"] += int(amount)
-            save_data(st.session_state.data)
-            st.session_state.logged_in = user
-            st.success(f"₹{amount:,} deposited successfully! New balance: ₹{user['Balance']:,} 🎉")
-            st.balloons()
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# WITHDRAW
-# ------------------------------------------------------------------
-elif page == "🏧 Withdraw":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("🏧 Withdraw money")
-
-    if not st.session_state.logged_in:
-        st.warning("Please log in first from the 🔐 Login page.")
-    else:
-        refresh()
-        user = find_user(st.session_state.data, st.session_state.logged_in["accountno."], st.session_state.logged_in["pin"])
-        st.metric("Current Balance", f"₹{user['Balance']:,}")
-
-        amount = st.number_input("Amount to withdraw (₹)", min_value=1, step=100)
-        if st.button("Withdraw 🏧", use_container_width=True):
-            if amount > user["Balance"]:
-                st.error("Insufficient balance 🥲")
+            user = find_user(st.session_state.data, acc_no.strip(), int(pin))
+            if user:
+                st.session_state.logged_in_acc = user["accountno."]
+                st.success("Login successful!")
+                st.rerun()
             else:
-                user["Balance"] -= int(amount)
-                save_data(st.session_state.data)
-                st.session_state.logged_in = user
-                st.success(f"₹{amount:,} withdrawn. New balance: ₹{user['Balance']:,} ✅")
-                st.snow()
+                st.error("Invalid account number or PIN.")
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# MY DETAILS
-# ------------------------------------------------------------------
-elif page == "🪪 My Details":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("🪪 Account details")
-
-    if not st.session_state.logged_in:
-        st.warning("Please log in first from the 🔐 Login page.")
+# ---------------- Pages below require login ----------------
+elif page == "Deposit":
+    st.title("💰 Deposit Money")
+    user = get_current_user()
+    if not user:
+        st.error("Please log in first.")
     else:
-        refresh()
-        user = find_user(st.session_state.data, st.session_state.logged_in["accountno."], st.session_state.logged_in["pin"])
-        st.markdown(f'<div class="avatar">{initials(user["name"])}</div>', unsafe_allow_html=True)
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.write(f"**Name:** {user['name']}")
-            st.write(f"**Age:** {user['age']}")
-            st.write(f"**Email:** {user['mail']}")
-        with c2:
-            st.write(f"**Account No.:** {user['accountno.']}")
-            st.write(f"**Phone:** {user['number']}")
-            st.write(f"**Balance:** ₹{user['Balance']:,}")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# UPDATE DETAILS
-# ------------------------------------------------------------------
-elif page == "✏️ Update Details":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("✏️ Update your details")
-
-    if not st.session_state.logged_in:
-        st.warning("Please log in first from the 🔐 Login page.")
-    else:
-        refresh()
-        user = find_user(st.session_state.data, st.session_state.logged_in["accountno."], st.session_state.logged_in["pin"])
-
-        with st.form("update_form"):
-            name = st.text_input("Name", value=user["name"])
-            mail = st.text_input("Email", value=user["mail"])
-            number = st.text_input("Phone number", value=str(user["number"]))
-            new_pin = st.text_input("New 4-digit PIN (leave blank to keep current)", type="password", max_chars=4)
-            submitted = st.form_submit_button("Save Changes 💾", use_container_width=True)
-
+        with st.form("deposit_form"):
+            amount = st.number_input("Amount to deposit (₹)", min_value=0, step=100)
+            submitted = st.form_submit_button("Deposit")
         if submitted:
-            errors = []
-            if not (number.isdigit() and len(number) == 10):
-                errors.append("Phone number must be exactly 10 digits.")
-            if new_pin and not (new_pin.isdigit() and len(new_pin) == 4):
-                errors.append("New PIN must be exactly 4 digits.")
-
-            if errors:
-                for e in errors:
-                    st.error(e)
+            ok, result = deposit_money(user["accountno."], user["pin"], int(amount))
+            if ok:
+                st.success("✅ Deposit successful!")
+                st.metric("New balance", f"₹{result}")
             else:
-                user["name"] = name.strip()
-                user["mail"] = mail.strip()
-                user["number"] = int(number)
-                if new_pin:
-                    user["pin"] = int(new_pin)
-                save_data(st.session_state.data)
-                st.session_state.logged_in = user
-                st.success("Details updated successfully! ✅")
+                st.error(result)
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# CLOSE ACCOUNT
-# ------------------------------------------------------------------
-elif page == "🗑️ Close Account":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("🗑️ Close your account")
-
-    if not st.session_state.logged_in:
-        st.warning("Please log in first from the 🔐 Login page.")
+elif page == "Withdraw":
+    st.title("💸 Withdraw Money")
+    user = get_current_user()
+    if not user:
+        st.error("Please log in first.")
     else:
-        st.error("This action is permanent and cannot be undone.")
-        confirm = st.checkbox("Yes, I understand and want to permanently close my account.")
-        if st.button("Close Account 💔", use_container_width=True, disabled=not confirm):
-            refresh()
-            acc_no = st.session_state.logged_in["accountno."]
-            st.session_state.data = [u for u in st.session_state.data if u["accountno."] != acc_no]
-            save_data(st.session_state.data)
-            st.session_state.logged_in = None
-            st.success("Your account has been closed. Goodbye 👋")
-            time.sleep(1.2)
-            st.rerun()
+        with st.form("withdraw_form"):
+            amount = st.number_input("Amount to withdraw (₹)", min_value=0, step=100)
+            submitted = st.form_submit_button("Withdraw")
+        if submitted:
+            ok, result = withdraw_money(user["accountno."], user["pin"], int(amount))
+            if ok:
+                st.success("✅ Withdrawal successful!")
+                st.metric("New balance", f"₹{result}")
+            else:
+                st.error(result)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+elif page == "My Details":
+    st.title("📇 My Details")
+    user = get_current_user()
+    if not user:
+        st.error("Please log in first.")
+    else:
+        col1, col2 = st.columns(2)
+        col1.metric("Balance", f"₹{user['balance']}")
+        col2.metric("Age", user["age"])
+        st.write(f"**Name:** {user['name']}")
+        st.write(f"**Email:** {user['mail']}")
+        st.write(f"**Phone:** {user['number']}")
+        st.write(f"**Account No.:** {user['accountno.']}")
+
+elif page == "Update Details":
+    st.title("✏️ Update Details")
+    st.caption("Leave a field blank to keep it unchanged.")
+    user = get_current_user()
+    if not user:
+        st.error("Please log in first.")
+    else:
+        with st.form("update_form"):
+            new_name = st.text_input("New name (optional)")
+            new_mail = st.text_input("New email (optional)")
+            new_number = st.text_input("New 10-digit phone number (optional)", max_chars=10)
+            new_pin = st.text_input("New 4-digit PIN (optional)", type="password", max_chars=4)
+            submitted = st.form_submit_button("Update Details")
+        if submitted:
+            ok, result = update_details(
+                user["accountno."], user["pin"], new_name, new_mail, new_number, new_pin
+            )
+            if ok:
+                st.success("✅ Details updated successfully!")
+            else:
+                st.error(result)
+
+elif page == "Close Account":
+    st.title("🗑️ Close Account")
+    st.warning("This action is permanent and cannot be undone.")
+    user = get_current_user()
+    if not user:
+        st.error("Please log in first.")
+    else:
+        confirm = st.checkbox("I understand this will permanently delete my account")
+        if st.button("Close Account"):
+            if not confirm:
+                st.error("Please check the confirmation box to proceed.")
+            else:
+                ok, result = close_account(user["accountno."], user["pin"])
+                if ok:
+                    st.success(result)
+                    st.rerun()
+                else:
+                    st.error(result)
